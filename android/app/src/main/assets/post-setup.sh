@@ -339,6 +339,30 @@ else
     echo -e "  ${GREEN}✓${NC} OpenClaw $OC_VER"
 fi
 
+# Fix native bindings broken by --ignore-scripts
+OPENCLAW_DIR="$(npm root -g)/openclaw"
+if [ -d "$OPENCLAW_DIR/node_modules/@snazzah/davey" ]; then
+    echo "  Installing native bindings for @snazzah/davey..."
+    (cd "$OPENCLAW_DIR" && npm install @snazzah/davey --no-fund --no-audit --no-save 2>/dev/null) || true
+fi
+
+# Install clawdhub (skill manager)
+echo "  Installing clawdhub..."
+if npm install -g clawdhub --no-fund --no-audit; then
+    echo -e "  ${GREEN}✓${NC} clawdhub installed"
+    CLAWHUB_DIR="$(npm root -g)/clawdhub"
+    if [ -d "$CLAWHUB_DIR" ] && ! (cd "$CLAWHUB_DIR" && node -e "require('undici')" 2>/dev/null); then
+        echo "  Installing undici dependency for clawdhub..."
+        (cd "$CLAWHUB_DIR" && npm install undici --no-fund --no-audit) || true
+    fi
+else
+    echo -e "  ${YELLOW}[WARN]${NC} clawdhub installation failed (non-critical)"
+fi
+
+# Run openclaw update (builds native modules like sharp)
+echo "  Running: openclaw update (this may take 5-10 minutes)..."
+openclaw update || true
+
 # ─── [5/7] Patches ──────────────────────────
 echo -e "▸ ${YELLOW}[5/7]${NC} Applying patches..."
 
@@ -358,6 +382,14 @@ cat > "$PREFIX/bin/systemctl" << 'STUB'
 exit 0
 STUB
 chmod +x "$PREFIX/bin/systemctl"
+
+# sharp WASM fallback (prebuilt native binaries don't load on Android)
+if [ -d "$OPENCLAW_DIR/node_modules/sharp" ]; then
+    if ! node -e "require('$OPENCLAW_DIR/node_modules/sharp')" 2>/dev/null; then
+        echo "  Installing sharp WebAssembly runtime..."
+        (cd "$OPENCLAW_DIR" && npm install @img/sharp-wasm32 --force --no-audit --no-fund 2>&1 | tail -3) || true
+    fi
+fi
 
 echo -e "  ${GREEN}✓${NC} Patches applied"
 
@@ -384,6 +416,8 @@ export GIT_SSL_CAINFO="$PREFIX/etc/tls/cert.pem"
 export GIT_CONFIG_NOSYSTEM=1
 export GIT_EXEC_PATH="$PREFIX/libexec/git-core"
 export GIT_TEMPLATE_DIR="$PREFIX/share/git-core/templates"
+export CLAWDHUB_WORKDIR="$HOME/.openclaw/workspace"
+export CPATH="$PREFIX/include/glib-2.0:$PREFIX/lib/glib-2.0/include"
 BASHRC
 
 echo -e "  ${GREEN}✓${NC} ~/.bashrc configured"
