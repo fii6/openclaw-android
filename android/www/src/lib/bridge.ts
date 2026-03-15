@@ -29,6 +29,7 @@ interface OpenClawBridge {
   runCommandAsync(callbackId: string, cmd: string): void
   checkForUpdates(): string
   applyUpdate(component: string): void
+  getApkUpdateInfo(): string
   getAppInfo(): string
   getBatteryOptimizationStatus(): string
   requestBatteryOptimizationExclusion(): void
@@ -36,6 +37,7 @@ interface OpenClawBridge {
   copyToClipboard(text: string): void
   getStorageInfo(): string
   clearCache(): void
+  openUrl(url: string): void
 }
 
 declare global {

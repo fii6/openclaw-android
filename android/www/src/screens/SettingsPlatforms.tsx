@@ -63,7 +63,7 @@ export function SettingsPlatforms() {
         return (
           <div key={p.id} className="card">
             <div className="card-row">
-              <span className="card-icon">{p.icon}</span>
+              <span className="card-icon">{p.icon.startsWith('/') ? <img src={p.icon.replace(/^\//, './')} alt={p.name} style={{ width: 32, height: 32 }} /> : p.icon}</span>
               <div className="card-content">
                 <div className="card-label">
                   {p.name}

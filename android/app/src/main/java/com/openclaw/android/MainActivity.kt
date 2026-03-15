@@ -65,6 +65,22 @@ class MainActivity : AppCompatActivity() {
 
         val isInstalled = bootstrapManager.isInstalled()
         Log.i(TAG, "Bootstrap installed: $isInstalled, needsPostSetup: ${bootstrapManager.needsPostSetup()}")
+
+        // Sync www assets and check for APK version upgrade
+        if (isInstalled) {
+            val prefs = getSharedPreferences("openclaw", 0)
+            val savedVersionCode = prefs.getInt("versionCode", 0)
+            val currentVersionCode = packageManager.getPackageInfo(packageName, 0).versionCode
+            // Always sync www from assets to pick up UI updates
+            bootstrapManager.syncWwwFromAssets()
+            // Ensure oa CLI is installed (network, run in background)
+            Thread { bootstrapManager.installOaCli() }.start()
+            if (currentVersionCode > savedVersionCode) {
+                Log.i(TAG, "APK version upgrade detected: $savedVersionCode -> $currentVersionCode")
+                bootstrapManager.applyScriptUpdate()
+                prefs.edit().putInt("versionCode", currentVersionCode).apply()
+            }
+        }
         if (isInstalled) {
             showTerminal()
             val session = sessionManager.createSession()
@@ -101,6 +117,7 @@ class MainActivity : AppCompatActivity() {
             WebView.setWebContentsDebuggingEnabled(true)
         }
         binding.webView.apply {
+            clearCache(true)
             settings.javaScriptEnabled = true
             settings.domStorageEnabled = true
             settings.allowFileAccess = true
@@ -108,6 +125,7 @@ class MainActivity : AppCompatActivity() {
             settings.allowFileAccessFromFileURLs = true
             @Suppress("DEPRECATION")
             settings.allowUniversalAccessFromFileURLs = true
+            settings.cacheMode = android.webkit.WebSettings.LOAD_NO_CACHE
             addJavascriptInterface(jsBridge, "OpenClaw")
             webViewClient = object : WebViewClient() {
                 override fun onPageFinished(view: WebView?, url: String?) {
@@ -201,6 +219,11 @@ class MainActivity : AppCompatActivity() {
         // Character keys
         setupExtraKeyTouch(findViewById(R.id.btnDash)) { sessionManager.activeSession?.write("-") }
         setupExtraKeyTouch(findViewById(R.id.btnPipe)) { sessionManager.activeSession?.write("|") }
+        setupExtraKeyTouch(findViewById(R.id.btnPaste)) {
+            val clipboard = getSystemService(CLIPBOARD_SERVICE) as android.content.ClipboardManager
+            val text = clipboard.primaryClip?.getItemAt(0)?.coerceToText(this)?.toString()
+            if (!text.isNullOrEmpty()) sessionManager.activeSession?.write(text)
+        }
 
         // Modifier toggles — stay pressed until next key or toggled off
         setupModifierTouch(findViewById(R.id.btnCtrl)) { ctrlDown = !ctrlDown; ctrlDown }

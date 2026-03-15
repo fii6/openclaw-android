@@ -170,7 +170,7 @@ class JsBridge(
         // Read from cached config.json or return defaults
         return gson.toJson(
             listOf(
-                mapOf("id" to "openclaw", "name" to "OpenClaw", "icon" to "🧠",
+                mapOf("id" to "openclaw", "name" to "OpenClaw", "icon" to "/openclaw.svg",
                     "desc" to "AI agent platform"),
             )
         )
@@ -289,13 +289,15 @@ class JsBridge(
             errorContext = mapOf("target" to id)
         ) {
             val env = EnvironmentBuilder.build(activity)
+            val prefix = bootstrapManager.prefixDir.absolutePath
+            val aptGet = "DEBIAN_FRONTEND=noninteractive $prefix/bin/apt-get -y -o Acquire::AllowInsecureRepositories=true -o APT::Get::AllowUnauthenticated=true"
             val cmd = when (id) {
-                // Termux packages (pkg)
+                // Termux packages (apt-get)
                 "tmux", "ttyd", "dufs", "openssh-server", "android-tools" ->
-                    "${bootstrapManager.prefixDir.absolutePath}/bin/apt-get install -y ${if (id == "openssh-server") "openssh" else id}"
+                    "$aptGet install ${if (id == "openssh-server") "openssh" else id}"
                 // Chromium (from x11-repo)
                 "chromium" ->
-                    "${bootstrapManager.prefixDir.absolutePath}/bin/apt-get install -y chromium"
+                    "$aptGet install chromium"
                 // code-server (custom)
                 "code-server" ->
                     "npm install -g code-server"
@@ -424,6 +426,33 @@ class JsBridge(
             }
         } catch (_: Exception) { /* ignore parse errors */ }
         return gson.toJson(updates)
+    }
+
+    @JavascriptInterface
+    fun getApkUpdateInfo(): String {
+        return try {
+            val url = java.net.URL("https://api.github.com/repos/AidanPark/openclaw-android/releases/latest")
+            val conn = url.openConnection() as java.net.HttpURLConnection
+            conn.connectTimeout = 5000
+            conn.readTimeout = 5000
+            conn.setRequestProperty("Accept", "application/vnd.github+json")
+            val body = conn.inputStream.bufferedReader().readText()
+            conn.disconnect()
+            val release = gson.fromJson(body, Map::class.java) as? Map<*, *>
+            val tagName = release?.get("tagName") as? String
+                ?: release?.get("tag_name") as? String
+                ?: return gson.toJson(mapOf("error" to "no tag"))
+            val latestVersion = tagName.trimStart('v')
+            val currentVersion = activity.packageManager
+                .getPackageInfo(activity.packageName, 0).versionName ?: "0.0.0"
+            gson.toJson(mapOf(
+                "currentVersion" to currentVersion,
+                "latestVersion" to latestVersion,
+                "updateAvailable" to (compareVersions(latestVersion, currentVersion) > 0)
+            ))
+        } catch (e: Exception) {
+            gson.toJson(mapOf("error" to e.message))
+        }
     }
 
     @JavascriptInterface
@@ -591,4 +620,24 @@ class JsBridge(
         activity.cacheDir.deleteRecursively()
         activity.cacheDir.mkdirs()
     }
+
+    @JavascriptInterface
+    fun openUrl(url: String) {
+        val intent = android.content.Intent(android.content.Intent.ACTION_VIEW, android.net.Uri.parse(url))
+        intent.addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+        activity.startActivity(intent)
+    }
+
+    /** Returns positive if a > b, negative if a < b, 0 if equal (semver: major.minor.patch) */
+    private fun compareVersions(a: String, b: String): Int {
+        val aParts = a.split(".").map { it.toIntOrNull() ?: 0 }
+        val bParts = b.split(".").map { it.toIntOrNull() ?: 0 }
+        val len = maxOf(aParts.size, bParts.size)
+        for (i in 0 until len) {
+            val diff = (aParts.getOrElse(i) { 0 }) - (bParts.getOrElse(i) { 0 })
+            if (diff != 0) return diff
+        }
+        return 0
+    }
+
 }

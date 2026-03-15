@@ -73,8 +73,8 @@ cmd_update() {
     local LOGFILE="$PROJECT_DIR/update.log"
 
     local TMPFILE
-    TMPFILE=$(mktemp "${PREFIX:-/tmp}/tmp/update-core.XXXXXX.sh" 2>/dev/null) \
-        || TMPFILE=$(mktemp /tmp/update-core.XXXXXX.sh)
+    TMPFILE=$(mktemp "${TMPDIR:-${PREFIX:-/tmp}/tmp}/update-core.XXXXXX.sh" 2>/dev/null) \
+        || TMPFILE=$(mktemp "/tmp/update-core.XXXXXX.sh")
 
     if ! curl -sfL "$REPO_BASE/update-core.sh" -o "$TMPFILE"; then
         rm -f "$TMPFILE"
@@ -160,8 +160,8 @@ cmd_install() {
     fi
 
     local TMPFILE
-    TMPFILE=$(mktemp "${PREFIX:-/tmp}/tmp/install-tools.XXXXXX.sh" 2>/dev/null) \
-        || TMPFILE=$(mktemp /tmp/install-tools.XXXXXX.sh)
+    TMPFILE=$(mktemp "${TMPDIR:-${PREFIX:-/tmp}/tmp}/install-tools.XXXXXX.sh" 2>/dev/null) \
+        || TMPFILE=$(mktemp "/tmp/install-tools.XXXXXX.sh")
 
     if ! curl -sfL "$REPO_BASE/install-tools.sh" -o "$TMPFILE"; then
         rm -f "$TMPFILE"

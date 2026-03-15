@@ -49,7 +49,7 @@ export function Setup({ onComplete }: Props) {
       setPlatforms(data)
     } else {
       setPlatforms([
-        { id: 'openclaw', name: 'OpenClaw', icon: '🧠', desc: 'AI agent platform' },
+        { id: 'openclaw', name: 'OpenClaw', icon: '/openclaw.svg', desc: 'AI agent platform' },
       ])
     }
   }, [])
@@ -133,7 +133,11 @@ export function Setup({ onComplete }: Props) {
             style={{ maxWidth: 340, width: '100%', cursor: 'pointer' }}
             onClick={() => handleSelectPlatform(p.id)}
           >
-            <div style={{ fontSize: 32, marginBottom: 8 }}>{p.icon}</div>
+            <div style={{ fontSize: 32, marginBottom: 8 }}>
+              {p.icon.startsWith('/') ? (
+                <img src={p.icon.replace(/^\//, './')} alt={p.name} style={{ width: 40, height: 40 }} />
+              ) : p.icon}
+            </div>
             <div style={{ fontSize: 18, fontWeight: 600 }}>{p.name}</div>
             <div style={{ fontSize: 13, color: 'var(--text-secondary)', marginTop: 4 }}>
               {p.desc}

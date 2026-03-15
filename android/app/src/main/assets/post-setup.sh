@@ -425,6 +425,15 @@ BASHRC
 
 echo -e "  ${GREEN}✓${NC} ~/.bashrc configured"
 
+# oa CLI (enables oa --update, oa --backup, etc.)
+if curl -fsSL "https://raw.githubusercontent.com/AidanPark/openclaw-android/main/oa.sh" \ 
+        -o "$PREFIX/bin/oa" 2>/dev/null; then
+    chmod +x "$PREFIX/bin/oa"
+    echo -e "  ${GREEN}✓${NC} oa CLI installed"
+else
+    echo -e "  ${YELLOW}[WARN]${NC} oa CLI installation failed (non-critical)"
+fi
+
 # ─── [7/7] Optional Tools ──────────────────
 TOOL_CONF="$OCA_DIR/tool-selections.conf"
 if [ -f "$TOOL_CONF" ]; then

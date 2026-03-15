@@ -48,7 +48,7 @@ export function Dashboard() {
 
   function handleUpdate() {
     bridge.call('showTerminal')
-    bridge.call('writeToTerminal', '', 'npm install -g openclaw@latest --ignore-scripts && echo "Update complete. Version: $(openclaw --version)"\n')
+    bridge.call('writeToTerminal', '', 'oa --update\n')
   }
 
   function handleInstallTools() {
@@ -64,7 +64,7 @@ export function Dashboard() {
     return (
       <div className="page">
         <div className="setup-container" style={{ minHeight: 'calc(100vh - 80px)' }}>
-          <div className="setup-logo">🧠</div>
+          <img src="./openclaw.svg" alt="OpenClaw" style={{ width: 64, height: 64, marginBottom: 4 }} />
           <div className="setup-title">Setup Required</div>
           <div className="setup-subtitle">
             The runtime environment hasn't been set up yet.
@@ -78,7 +78,7 @@ export function Dashboard() {
     <div className="page">
       {/* Platform header */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 24 }}>
-        <span style={{ fontSize: 36 }}>🧠</span>
+        <img src="./openclaw.svg" alt="OpenClaw" style={{ width: 40, height: 40 }} />
         <div>
           <div style={{ fontSize: 20, fontWeight: 700 }}>
             {platform?.name || 'OpenClaw'}
@@ -119,7 +119,7 @@ export function Dashboard() {
           <div className="card-icon">⬆️</div>
           <div className="card-content">
             <div className="card-label">Update</div>
-            <div className="card-desc">Update OpenClaw to latest version</div>
+            <div className="card-desc">Update OpenClaw and all components</div>
           </div>
           <div className="card-chevron">›</div>
         </div>

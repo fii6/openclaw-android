@@ -21,8 +21,8 @@ android {
         minSdk = 24
         //noinspection ExpiredTargetSdkVersion
         targetSdk = 28
-        versionCode = 2
-        versionName = "0.3.1"
+        versionCode = 5
+        versionName = "0.3.3"
 
         ndk { abiFilters += listOf("arm64-v8a") }
 
@@ -101,6 +101,37 @@ dependencies {
     // WebView + @JavascriptInterface — Android SDK built-in, no extra dependency
 }
 
+
+// --- www build automation ---
+// Builds the React UI (android/www) and copies dist/ into assets/www before every APK build.
+val wwwProjectDir = file("${rootDir}/www")
+val assetsWwwDir = file("${projectDir}/src/main/assets/www")
+
+val buildWww by tasks.registering(Exec::class) {
+    description = "Build React UI (npm run build)"
+    group = "build"
+    workingDir = wwwProjectDir
+    commandLine("npm", "run", "build")
+    inputs.dir(wwwProjectDir.resolve("src"))
+    inputs.files(
+        wwwProjectDir.resolve("package.json"),
+        wwwProjectDir.resolve("tsconfig.json"),
+        wwwProjectDir.resolve("vite.config.ts")
+    )
+    outputs.dir(wwwProjectDir.resolve("dist"))
+}
+
+val syncWwwAssets by tasks.registering(Sync::class) {
+    description = "Copy React dist/ into assets/www/"
+    group = "build"
+    dependsOn(buildWww)
+    from(wwwProjectDir.resolve("dist"))
+    into(assetsWwwDir)
+}
+
+tasks.named("preBuild") {
+    dependsOn(syncWwwAssets)
+}
 
 detekt {
     buildUponDefaultConfig = true

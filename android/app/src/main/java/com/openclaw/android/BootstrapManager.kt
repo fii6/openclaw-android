@@ -54,9 +54,15 @@ class BootstrapManager(private val context: Context) {
      * Full setup flow. Reports progress via callback (0.0–1.0).
      */
     suspend fun startSetup(onProgress: (Float, String) -> Unit) = withContext(Dispatchers.IO) {
+        // Clean up any incomplete previous attempt before starting
+        if (stagingDir.exists()) {
+            Log.i(TAG, "Removing incomplete staging dir from previous attempt")
+            stagingDir.deleteRecursively()
+        }
         if (isInstalled()) {
-            onProgress(1f, "Already installed")
-            return@withContext
+            // Bootstrap exists but setup is incomplete — wipe and reinstall
+            Log.i(TAG, "Incomplete bootstrap detected, reinstalling...")
+            prefixDir.deleteRecursively()
         }
 
         // Step 1: Download or extract bootstrap
@@ -76,6 +82,7 @@ class BootstrapManager(private val context: Context) {
         stagingDir.renameTo(prefixDir)
         setupDirectories()
         copyAssetScripts()
+        syncWwwFromAssets()
         setupTermuxExec()
 
         onProgress(1f, "Setup complete")
@@ -288,14 +295,14 @@ class BootstrapManager(private val context: Context) {
         // The wrapper captures stderr and returns success if confdir is the only error.
         val dpkgBin = File(prefixDir, "bin/dpkg")
         val dpkgReal = File(prefixDir, "bin/dpkg.real")
-        if (dpkgBin.exists() && !dpkgReal.exists()) {
-            dpkgBin.renameTo(dpkgReal)
+        if (dpkgBin.exists() && (!dpkgReal.exists() || !dpkgBin.readText().contains("export PATH"))) {
+            if (!dpkgReal.exists()) dpkgBin.renameTo(dpkgReal)
             val d = "$" // dollar sign for shell script
             val realPath = dpkgReal.absolutePath
             val wrapperContent = """#!/bin/bash
-# dpkg wrapper: suppress confdir errors from hardcoded com.termux paths.
-# dpkg returns exit code 2 when it can't open the old com.termux config dir.
-# We downgrade exit code 2 to 0 so apt-get doesn't abort.
+# dpkg wrapper: set PATH so dpkg can find sh, tar, rm, dpkg-deb etc.
+# Also suppresses confdir errors from hardcoded com.termux paths.
+export PATH="$realPath/../:$realPath/../applets:${d}PATH"
 "$realPath" "${d}@"
 _rc=${d}?
 if [ ${d}_rc -eq 2 ]; then exit 0; fi
@@ -307,31 +314,112 @@ exit ${d}_rc
     }
 
     /**
-     * Copy post-setup.sh and glibc-compat.js from assets to home dir.
+     * Copy post-setup.sh and glibc-compat.js to home dir.
+     * post-setup.sh: try GitHub first, fall back to bundled asset.
+     * glibc-compat.js: always use bundled asset.
      */
     private fun copyAssetScripts() {
         val ocaDir = File(homeDir, ".openclaw-android")
         ocaDir.mkdirs()
         File(ocaDir, "patches").mkdirs()
 
-        for (name in listOf("post-setup.sh", "glibc-compat.js")) {
-            try {
-                val target = if (name == "glibc-compat.js")
-                    File(ocaDir, "patches/$name") else File(ocaDir, name)
-                context.assets.open(name).use { input ->
-                    target.outputStream().use { output ->
-                        input.copyTo(output)
-                    }
-                }
-                target.setExecutable(true)
-                Log.i(TAG, "Copied $name to ${target.absolutePath}")
-            } catch (e: Exception) {
-                Log.w(TAG, "Failed to copy $name", e)
+        // post-setup.sh: try downloading latest from GitHub, fall back to bundled
+        val postSetup = File(ocaDir, "post-setup.sh")
+        val postSetupUrl = "https://raw.githubusercontent.com/AidanPark/openclaw-android/main/post-setup.sh"
+        var downloaded = false
+        try {
+            java.net.URL(postSetupUrl).openStream().use { input ->
+                postSetup.outputStream().use { output -> input.copyTo(output) }
             }
+            postSetup.setExecutable(true)
+            Log.i(TAG, "post-setup.sh downloaded from GitHub")
+            downloaded = true
+        } catch (e: Exception) {
+            Log.w(TAG, "Failed to download post-setup.sh, using bundled fallback", e)
+        }
+        if (!downloaded) {
+            try {
+                context.assets.open("post-setup.sh").use { input ->
+                    postSetup.outputStream().use { output -> input.copyTo(output) }
+                }
+                postSetup.setExecutable(true)
+                Log.i(TAG, "post-setup.sh copied from bundled assets")
+            } catch (e: Exception) {
+                Log.w(TAG, "Failed to copy bundled post-setup.sh", e)
+            }
+        }
+
+        // glibc-compat.js: always use bundled asset
+        try {
+            val target = File(ocaDir, "patches/glibc-compat.js")
+            context.assets.open("glibc-compat.js").use { input ->
+                target.outputStream().use { output -> input.copyTo(output) }
+            }
+            Log.i(TAG, "glibc-compat.js copied from bundled assets")
+        } catch (e: Exception) {
+            Log.w(TAG, "Failed to copy glibc-compat.js", e)
         }
     }
 
     // Runtime packages are installed by post-setup.sh in the terminal
+
+    /**
+     * Apply script update on APK version upgrade:
+     * - Overwrites post-setup.sh and glibc-compat.js from latest assets
+     * - Installs/updates oa CLI from GitHub so users can run `oa --update`
+     */
+    fun applyScriptUpdate() {
+        if (!isInstalled()) return
+        copyAssetScripts()
+        syncWwwFromAssets()
+        installOaCli()
+        Log.i(TAG, "Script update applied")
+    }
+
+    /**
+     * Copy bundled assets/www into wwwDir, overwriting any existing files.
+     * Called on first install and on APK version upgrade to ensure the UI is always current.
+     */
+    fun syncWwwFromAssets() {
+        try {
+            wwwDir.mkdirs()
+            copyAssetDir("www", wwwDir)
+            Log.i(TAG, "www synced from assets to ${wwwDir.absolutePath}")
+        } catch (e: Exception) {
+            Log.w(TAG, "Failed to sync www from assets", e)
+        }
+    }
+
+    private fun copyAssetDir(assetPath: String, targetDir: File) {
+        val entries = context.assets.list(assetPath) ?: return
+        targetDir.mkdirs()
+        for (entry in entries) {
+            val childAsset = "$assetPath/$entry"
+            val childFile = File(targetDir, entry)
+            val children = context.assets.list(childAsset)
+            if (!children.isNullOrEmpty()) {
+                copyAssetDir(childAsset, childFile)
+            } else {
+                context.assets.open(childAsset).use { input ->
+                    childFile.outputStream().use { output -> input.copyTo(output) }
+                }
+            }
+        }
+    }
+
+    fun installOaCli() {
+        val oaBin = File(prefixDir, "bin/oa")
+        val oaUrl = "https://raw.githubusercontent.com/AidanPark/openclaw-android/main/oa.sh"
+        try {
+            java.net.URL(oaUrl).openStream().use { input ->
+                oaBin.outputStream().use { output -> input.copyTo(output) }
+            }
+            oaBin.setExecutable(true)
+            Log.i(TAG, "oa CLI installed at ${oaBin.absolutePath}")
+        } catch (e: Exception) {
+            Log.w(TAG, "Failed to install oa CLI", e)
+        }
+    }
 }
 
 private object Os {
