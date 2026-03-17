@@ -48,6 +48,17 @@ if [ -x "$NODE_DIR/bin/node" ]; then
         INSTALLED_VER=$("$NODE_DIR/bin/node" --version 2>/dev/null | sed 's/^v//')
         if [ "$INSTALLED_VER" = "$NODE_VERSION" ]; then
             echo -e "${GREEN}[SKIP]${NC} Node.js already installed (v${INSTALLED_VER})"
+            # Repair shebangs even on skip — they may not have been patched in older installs
+            _any_patched=false
+            for _bin in npm npx corepack; do
+                if [ -f "$NODE_DIR/bin/$_bin" ] && head -1 "$NODE_DIR/bin/$_bin" 2>/dev/null | grep -q '#!/usr/bin/env node'; then
+                    sed -i "1s|#!/usr/bin/env node|#!$NODE_DIR/bin/node|" "$NODE_DIR/bin/$_bin"
+                    _any_patched=true
+                fi
+            done
+            if [ "$_any_patched" = true ]; then
+                echo -e "${YELLOW}[FIX]${NC}  npm/npx/corepack shebangs patched"
+            fi
             exit 0
         fi
         LOWEST=$(printf '%s\n%s\n' "$INSTALLED_VER" "$NODE_VERSION" | sort -V | head -1)
@@ -136,9 +147,18 @@ WRAPPER
 chmod +x "$NODE_DIR/bin/node"
 echo -e "${GREEN}[OK]${NC}   node wrapper created"
 
-# npm is a JS script that uses the node from its own directory,
-# so it automatically inherits the wrapper. No additional wrapping needed.
-# Same for npx.
+# ── Step 2.5: Patch npm/npx/corepack shebangs ──
+#
+# Their shebang is #!/usr/bin/env node, but /usr/bin/env does not exist in Termux.
+# Without this patch, direct execution (e.g. spawn/exec from OpenClaw) fails with:
+#   bash: .../npx: /usr/bin/env: bad interpreter: No such file or directory
+echo "Patching npm/npx/corepack shebangs..."
+for _bin in npm npx corepack; do
+    if [ -f "$NODE_DIR/bin/$_bin" ] && head -1 "$NODE_DIR/bin/$_bin" 2>/dev/null | grep -q '#!/usr/bin/env node'; then
+        sed -i "1s|#!/usr/bin/env node|#!$NODE_DIR/bin/node|" "$NODE_DIR/bin/$_bin"
+        echo -e "${GREEN}[OK]${NC}   $_bin shebang patched"
+    fi
+done
 
 # ── Step 3: Configure npm ─────────────────────
 
